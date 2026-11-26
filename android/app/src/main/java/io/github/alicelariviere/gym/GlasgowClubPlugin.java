@@ -73,9 +73,10 @@ public class GlasgowClubPlugin extends Plugin {
         script = js;
         params = call.getString("params", "{}");
         watching = Boolean.TRUE.equals(call.getBoolean("watch", false));
+        String title = call.getString("title", "Working on it…");
         main.post(() -> {
             ensureSite();
-            setBanner("Booking your gym slot…", false);
+            setBanner(title, false);
             if (watching) show(); else hide();
             site.loadUrl(url);
             timeout = () -> finish(error("timeout", "Glasgow Club took too long to respond."));
@@ -83,16 +84,19 @@ public class GlasgowClubPlugin extends Plugin {
         });
     }
 
-    /** Show Glasgow Club's site so Alice can sign in. Resolves when she taps Done. */
+    /** Show Glasgow Club's site (to sign in, cancel, or see where a job stopped). Resolves when she taps Done. */
     @PluginMethod
     public void showSite(PluginCall call) {
         siteCall = call;
-        String url = call.getString("url", "https://" + HOST + "/");
+        String url = call.getString("url");
+        String title = call.getString("title", "Glasgow Club");
         main.post(() -> {
+            boolean fresh = site == null;
             ensureSite();
-            setBanner("Sign in to Glasgow Club, then tap Done", true);
+            setBanner(title, true);
             show();
-            site.loadUrl(url);
+            if (url != null) site.loadUrl(url);
+            else if (fresh) site.loadUrl("https://" + HOST + "/");
         });
     }
 

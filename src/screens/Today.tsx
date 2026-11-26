@@ -213,10 +213,11 @@ function GymCheckIn() {
 
 function JustReleased() {
   const navigate = useNavigate();
-  const { classes, entryFor, book } = useStore();
-  // Aerial classes ALT opened for booking in the last day.
+  const { classes, entryFor, book, isPending } = useStore();
+  // Classes Glasgow Club opened for booking in the last day (they open at 9pm, eight days ahead). G-Cycle first.
   const released = classes
-    .filter((c) => c.justReleased && (c.category === 'Hoop' || c.category === 'Silks' || c.category === 'Trapeze'))
+    .filter((c) => c.justReleased)
+    .sort((a, b) => Number(b.category === 'Cycle') - Number(a.category === 'Cycle') || a.start.getTime() - b.start.getTime())
     .slice(0, 4);
   if (released.length === 0) return null;
 
@@ -233,10 +234,19 @@ function JustReleased() {
               </span>
               <span className="text-[15px] font-medium">{c.title}</span>
               <span className="text-[13px] text-muted">
-                {c.instructor || 'Open session'} · {spacesLabel(spacesLeft(c, entry))}
+                {c.instructor || 'Open session'}
+                {spacesLeft(c, entry) > 0 && ` · ${spacesLabel(spacesLeft(c, entry))}`}
               </span>
             </button>
-            {entry ? <Tag kind="booked">Booked</Tag> : <Pill onClick={() => book(c.id)}>Book</Pill>}
+            {entry ? (
+              <Tag kind="booked">Booked</Tag>
+            ) : spacesLeft(c, entry) === 0 ? (
+              <Tag>Full</Tag>
+            ) : isPending(c.id) ? (
+              <Pill disabled>Booking…</Pill>
+            ) : (
+              <Pill onClick={() => book(c.id)}>Book</Pill>
+            )}
           </div>
         );
       })}

@@ -10,7 +10,7 @@ import { Pill, QueueBars, StudioDot, Tag } from './ui';
 
 export function ClassRow({ cls, entry, mode = 'classes' }: { cls: GymClass; entry?: Entry; mode?: 'classes' | 'bookings' }) {
   const navigate = useNavigate();
-  const { book, cancel, joinWaitlist, leaveWaitlist, now } = useStore();
+  const { book, cancel, joinWaitlist, leaveWaitlist, now, isPending } = useStore();
   const studio = STUDIOS[cls.studio];
   const booked = entry?.status === 'booked';
   const waitlisted = entry?.status === 'waitlist';
@@ -20,6 +20,9 @@ export function ClassRow({ cls, entry, mode = 'classes' }: { cls: GymClass; entr
   const opening = !entry && notOpenYet(cls, now);
   const closed = !entry && bookingClosed(cls, now);
   const canAct = !past && !opening && !closed;
+  const pending = isPending(cls.id);
+  // Glasgow Club classes have no waitlist.
+  const canWaitlist = cls.studio !== 'gc';
 
   const tint = waitlisted ? 'bg-pink-tint' : booked && mode === 'classes' ? 'bg-aqua-tint' : '';
 
@@ -66,7 +69,7 @@ export function ClassRow({ cls, entry, mode = 'classes' }: { cls: GymClass; entr
         )}
         {mode === 'classes' && opening && cls.opensAt && <Tag>Opens {shortDay(cls.opensAt)}</Tag>}
         {mode === 'classes' && closed && <Tag>Booking closed</Tag>}
-        {mode === 'classes' && canAct && !entry && full && <Tag>Full · {cls.waiting} waiting</Tag>}
+        {mode === 'classes' && canAct && !entry && full && <Tag>{cls.waiting ? `Full · ${cls.waiting} waiting` : 'Full'}</Tag>}
         {mode === 'classes' && canAct && !entry && !full && spaces <= 3 && <Tag>{spacesLabel(spaces)}</Tag>}
       </div>
 
@@ -79,10 +82,14 @@ export function ClassRow({ cls, entry, mode = 'classes' }: { cls: GymClass; entr
           <Pill variant="outline" onClick={act(leaveWaitlist)}>
             Leave
           </Pill>
+        ) : pending ? (
+          <Pill disabled>Booking…</Pill>
         ) : full ? (
-          <Pill variant="outline" onClick={act(joinWaitlist)}>
-            Join waitlist
-          </Pill>
+          canWaitlist ? (
+            <Pill variant="outline" onClick={act(joinWaitlist)}>
+              Join waitlist
+            </Pill>
+          ) : null
         ) : (
           <Pill onClick={act(book)}>Book</Pill>
         ))}

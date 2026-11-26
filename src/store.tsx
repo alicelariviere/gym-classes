@@ -1,10 +1,18 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useState, type ReactNode } from 'react';
-import { fetchAlt, mapAlt, readAltCache, writeAltCache, type AltCache } from './data/teamup';
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
 import type { CheckIn, Entry, GymClass, StudioId } from './data/types';
-import { dayKey, ordinal, startOfDay, time } from './lib/dates';
+import { dayKey, startOfDay, time } from './lib/dates';
 import { downloadIcs } from './lib/ics';
-import { glasgowClubGymUrl } from './data/glasgowclub';
-import { bookGymSlot, inApp, type CheckInResult } from './lib/native';
+import {
+  glasgowClubBookingsUrl,
+  glasgowClubGymUrl,
+  mapGc,
+  matchBookings,
+  readGcCache,
+  writeGcCache,
+  type GcBooking,
+  type GcCache,
+} from './data/glasgowclub';
+import { bookClass, bookGymSlot, inApp, loadMyBookings, loadTimetable, openMyBookings, type CheckInResult } from './lib/native';
 
 const STORAGE_KEY = 'gym-app-v3';
 
@@ -28,7 +36,8 @@ type Action =
   | { type: 'checkIn'; slot: string }
   | { type: 'calendar'; id: string }
   | { type: 'selectDay'; day: string }
-  | { type: 'studio'; studio: StudioId };
+  | { type: 'studio'; studio: StudioId }
+  | { type: 'sync'; classIds: string[]; gymSlot: string | null };
 
 function reducer(state: State, action: Action): State {
   const without = (id: string) => state.entries.filter((e) => e.classId !== id);
@@ -54,6 +63,13 @@ function reducer(state: State, action: Action): State {
       return { ...state, selectedDay: action.day };
     case 'studio':
       return { ...state, studio: action.studio };
+    case 'sync':
+      // What Glasgow Club says you're booked on replaces what the app thought.
+      return {
+        ...state,
+        entries: action.classIds.map((classId) => ({ classId, status: 'booked' as const, at: 0 })),
+        checkIn: action.gymSlot ? { slot: action.gymSlot } : state.checkIn,
+      };
   }
 }
 
@@ -71,7 +87,8 @@ function load(today: string): Persisted {
   return { seededFor: today, entries: [], checkIn: null, calendar: [] };
 }
 
-export type AltStatus = 'loading' | 'live' | 'offline';
+/** loading: first fetch; live: fresh from Glasgow Club; offline: showing the last copy; browser: only the Android app can load it. */
+export type TimetableStatus = 'loading' | 'live' | 'offline' | 'browser';
 
 /** The short banner that confirms an action. */
 export interface Toast {
@@ -82,8 +99,10 @@ export interface Toast {
 
 interface Store {
   now: Date;
-  /** Whether ALT's timetable is live from TeamUp, and when it was fetched. */
-  alt: { status: AltStatus; updatedAt: number | null };
+  /** Whether the Glasgow Club timetable is live, and when it was fetched. */
+  timetable: { status: TimetableStatus; updatedAt: number | null };
+  /** A class booking is under way. */
+  isPending: (id: string) => boolean;
   toast: Toast | null;
   /** The Glasgow Club check-in in progress, or how the last one went. */
   gymCheck: { busy: boolean; last: CheckInResult | null };
@@ -113,46 +132,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [now, setNow] = useState(() => new Date());
   const today = useMemo(() => startOfDay(now), [now]);
   const todayKey = dayKey(today);
-  // ALT, live from TeamUp. Show the last copy straight away, then refresh.
-  const [altData, setAltData] = useState<AltCache | null>(() => readAltCache());
-  const [altStatus, setAltStatus] = useState<AltStatus>('loading');
-  useEffect(() => {
-    let ctrl: AbortController | null = null;
-    let last = 0;
-    const refresh = async () => {
-      if (Date.now() - last < 60_000) return;
-      last = Date.now();
-      ctrl?.abort();
-      ctrl = new AbortController();
-      try {
-        const list = await fetchAlt(startOfDay(new Date()), ctrl.signal);
-        writeAltCache(list);
-        setAltData({ fetchedAt: Date.now(), list });
-        setAltStatus('live');
-      } catch (e) {
-        if ((e as Error).name !== 'AbortError') setAltStatus('offline');
-      }
-    };
-    refresh();
-    const onShow = () => document.visibilityState === 'visible' && refresh();
-    document.addEventListener('visibilitychange', onShow);
-    const t = window.setInterval(refresh, 5 * 60_000);
-    return () => {
-      ctrl?.abort();
-      document.removeEventListener('visibilitychange', onShow);
-      window.clearInterval(t);
-    };
-  }, [todayKey]);
+  // Glasgow Club classes at Gorbals. Show the last copy straight away, then refresh in the app.
+  const [gcData, setGcData] = useState<GcCache | null>(() => readGcCache());
+  const [timetableStatus, setTimetableStatus] = useState<TimetableStatus>(inApp() ? 'loading' : 'browser');
 
   const classes = useMemo(
-    () => (altData ? mapAlt(altData.list, now) : []).sort((a, b) => a.start.getTime() - b.start.getTime()),
-    [altData, now],
+    () => (gcData ? mapGc(gcData.sessions, now) : []).sort((a, b) => a.start.getTime() - b.start.getTime()),
+    [gcData, now],
   );
 
   const [state, dispatch] = useReducer(reducer, undefined, () => ({
     ...load(todayKey),
     selectedDay: todayKey,
-    studio: 'alt' as StudioId,
+    studio: 'gc' as StudioId,
   }));
 
   // Keep "now" fresh so the next gym slot and "next up" stay right.
@@ -181,20 +173,91 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [gymCheck, setGymCheck] = useState<{ busy: boolean; last: CheckInResult | null }>({ busy: false, last: null });
   const notify = (text: string, kind: Toast['kind'] = 'info') => setToast({ id: Date.now(), text, kind });
 
-  // ALT bookings happen on TeamUp until sign-in is connected.
-  const openOnStudioSite = (id: string) => {
-    const c = index.get(id);
-    if (c?.studio === 'alt' && c.url) {
-      window.open(c.url, '_blank', 'noopener');
-      notify('Opening TeamUp to book');
-      return true;
+  const [pending, setPending] = useState<string[]>([]);
+  const saveDetails = (result: CheckInResult) => {
+    try {
+      localStorage.setItem('gym-last-checkin', JSON.stringify({ at: new Date().toISOString(), ...result }));
+    } catch {
+      // Only used for sending details.
     }
-    return false;
+  };
+
+  // Your Glasgow Club bookings, read from their My Bookings page.
+  const applyBookings = useCallback((bookings: GcBooking[], sessions: GcCache['sessions']) => {
+    const { classIds, gymSlot } = matchBookings(bookings, mapGc(sessions, new Date()));
+    dispatch({ type: 'sync', classIds, gymSlot });
+  }, []);
+  const gcRef = useRef(gcData);
+  gcRef.current = gcData;
+  const syncBookings = useCallback(async () => {
+    const bookings = await loadMyBookings();
+    if (bookings) applyBookings(bookings, gcRef.current?.sessions ?? []);
+    return bookings;
+  }, [applyBookings]);
+
+  // Refresh the timetable and bookings when the app opens or comes back, at most every 10 minutes.
+  const refreshing = useRef(false);
+  const lastRefresh = useRef(0);
+  const refresh = useCallback(async () => {
+    if (!inApp() || refreshing.current || Date.now() - lastRefresh.current < 10 * 60_000) return;
+    refreshing.current = true;
+    lastRefresh.current = Date.now();
+    try {
+      const sessions = await loadTimetable();
+      if (sessions) {
+        writeGcCache(sessions);
+        const fresh = { fetchedAt: Date.now(), sessions };
+        gcRef.current = fresh;
+        setGcData(fresh);
+        setTimetableStatus('live');
+      } else {
+        setTimetableStatus('offline');
+      }
+      await syncBookings();
+    } catch {
+      setTimetableStatus('offline');
+    } finally {
+      refreshing.current = false;
+    }
+  }, [syncBookings]);
+  useEffect(() => {
+    refresh();
+    const onShow = () => document.visibilityState === 'visible' && refresh();
+    document.addEventListener('visibilitychange', onShow);
+    return () => document.removeEventListener('visibilitychange', onShow);
+  }, [refresh, todayKey]);
+
+  const bookOne = async (id: string) => {
+    const c = index.get(id);
+    if (!c) return;
+    if (!inApp() || !c.activityId) {
+      if (c.url) window.open(c.url, '_blank', 'noopener');
+      notify('Opening Glasgow Club to book');
+      return;
+    }
+    if (pending.includes(id)) return;
+    setPending((p) => [...p, id]);
+    notify(`Booking ${c.title}…`);
+    let result: CheckInResult;
+    try {
+      result = await bookClass(c.activityId, c.start);
+    } catch (e) {
+      result = { ok: false, reason: 'error', message: String((e as Error)?.message ?? e) };
+    }
+    setPending((p) => p.filter((x) => x !== id));
+    saveDetails(result);
+    if (result.ok) {
+      dispatch({ type: 'book', id });
+      notify(`Booked · ${c.title}`, 'booked');
+    } else {
+      notify(result.message ?? "Couldn't book that class");
+    }
   };
 
   const store: Store = {
     now,
-    alt: { status: altStatus, updatedAt: altData?.fetchedAt ?? null },
+    timetable: { status: timetableStatus, updatedAt: gcData?.fetchedAt ?? null },
+    isPending: (id) => pending.includes(id),
     toast,
     gymCheck,
     today,
@@ -207,29 +270,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     selectedDay: state.selectedDay,
     studio: state.studio,
     book: (id) => {
-      if (openOnStudioSite(id)) return;
-      dispatch({ type: 'book', id });
-      notify(`Booked · ${index.get(id)?.title ?? 'class'}`, 'booked');
+      bookOne(id);
     },
-    bookMany: (ids) => {
-      const inApp = ids.filter((id) => index.get(id)?.studio !== 'alt');
-      dispatch({ type: 'bookMany', ids: inApp });
-      notify(`Booked ${inApp.length} classes`, 'booked');
+    bookMany: async (ids) => {
+      for (const id of ids) await bookOne(id);
     },
-    cancel: (id) => {
-      dispatch({ type: 'cancel', id });
-      notify('Booking cancelled');
+    cancel: async (id) => {
+      // Glasgow Club cancellations happen on their My Bookings page.
+      if (!inApp()) {
+        window.open(glasgowClubBookingsUrl, '_blank', 'noopener');
+        notify('Opening Glasgow Club to cancel');
+        return;
+      }
+      await openMyBookings();
+      const bookings = await syncBookings();
+      if (bookings && !matchBookings(bookings, classes).classIds.includes(id)) notify('Booking cancelled');
     },
-    joinWaitlist: (id) => {
-      if (openOnStudioSite(id)) return;
-      const position = (index.get(id)?.waiting ?? 0) + 1;
-      dispatch({ type: 'joinWaitlist', id, position });
-      notify(`On the waitlist · ${ordinal(position)} in line`, 'waitlist');
-    },
-    leaveWaitlist: (id) => {
-      dispatch({ type: 'cancel', id });
-      notify('You left the waitlist');
-    },
+    joinWaitlist: () => notify("Glasgow Club classes don't have waitlists"),
+    leaveWaitlist: (id) => dispatch({ type: 'cancel', id }),
     doCheckIn: async (slot) => {
       if (!inApp()) {
         // In a browser, Glasgow Club's own page is as close as we can get.
@@ -246,11 +304,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         result = { ok: false, reason: 'error', message: String((e as Error)?.message ?? e) };
       }
       setGymCheck({ busy: false, last: result });
-      try {
-        localStorage.setItem('gym-last-checkin', JSON.stringify({ at: new Date().toISOString(), ...result }));
-      } catch {
-        // Only used for sending details.
-      }
+      saveDetails(result);
       if (result.ok && result.slot) {
         const [h, m] = result.slot.split(':').map(Number);
         const booked = new Date(slot);

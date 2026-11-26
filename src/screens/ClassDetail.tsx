@@ -5,6 +5,7 @@ import type { Category } from '../data/types';
 import { daysBetween, longDay, ordinal, time } from '../lib/dates';
 import { bookingClosed, endOf, isFull, notOpenYet, opensLabel, spacesLabel, spacesLeft, waitlistTotal } from '../lib/classes';
 import { useStore } from '../store';
+import { inApp } from '../lib/native';
 import {
   BikeIcon,
   CalendarPlus,
@@ -45,7 +46,7 @@ function Row({ icon, children }: { icon: ReactNode; children: ReactNode }) {
 export function ClassDetail() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
-  const { byId, entryFor, today, now, book, cancel, joinWaitlist, leaveWaitlist, addToCalendar, inCalendar } = useStore();
+  const { byId, entryFor, today, now, book, cancel, joinWaitlist, leaveWaitlist, addToCalendar, inCalendar, isPending } = useStore();
   const c = byId(id);
 
   if (!c) {
@@ -112,7 +113,7 @@ export function ClassDetail() {
           {!booked && !c.unlimited && !opening && (
             <Row icon={<People size={20} />}>
               <span className="rounded-full bg-soft px-[11px] py-1 text-[14px] font-medium">
-                {full ? `Full · ${waitlistTotal(c, entry)} waiting` : spacesLabel(spaces)}
+                {full ? (c.studio === 'gc' ? 'Full' : `Full · ${waitlistTotal(c, entry)} waiting`) : spacesLabel(spaces)}
               </span>
             </Row>
           )}
@@ -146,8 +147,18 @@ export function ClassDetail() {
                 Leave waitlist
               </Pill>
             ) : full ? (
-              <Pill size="lg" className="flex-1" onClick={() => joinWaitlist(c.id)}>
-                Join waitlist
+              c.studio === 'gc' ? (
+                <Pill variant="outline" size="lg" className="flex-1" disabled>
+                  Class full
+                </Pill>
+              ) : (
+                <Pill size="lg" className="flex-1" onClick={() => joinWaitlist(c.id)}>
+                  Join waitlist
+                </Pill>
+              )
+            ) : isPending(c.id) ? (
+              <Pill size="lg" className="flex-1" disabled>
+                Booking…
               </Pill>
             ) : (
               <Pill size="lg" className="flex-1" onClick={() => book(c.id)}>
@@ -156,8 +167,8 @@ export function ClassDetail() {
             )}
           </div>
         )}
-        {!past && !opening && !closed && !entry && c.studio === 'alt' && (
-          <p className="-mt-2 text-center text-[13px] text-muted">Opens TeamUp to finish booking</p>
+        {!past && !opening && !closed && !entry && !inApp() && (
+          <p className="-mt-2 text-center text-[13px] text-muted">Opens Glasgow Club to finish booking</p>
         )}
       </section>
     </div>

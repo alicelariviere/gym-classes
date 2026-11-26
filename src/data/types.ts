@@ -19,6 +19,8 @@ export type Category =
   | 'Step'
   | 'Pole'
   | 'Open gym'
+  | 'Core'
+  | 'Dance'
   | 'Other';
 
 export type Level = 'Beginners' | 'All levels' | 'Experienced';
@@ -47,6 +49,8 @@ export interface GymClass {
   closesAt?: Date;
   /** The class on the studio's own booking site. */
   url?: string;
+  /** Glasgow Club's ID for the class, used to book it. */
+  activityId?: string;
   description?: string;
 }
 

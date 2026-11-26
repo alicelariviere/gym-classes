@@ -24,7 +24,7 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         // Fetched fresh by the Android app each time, so never cached.
-        globIgnores: ['gc-book.js', '**/*.apk'],
+        globIgnores: ['gc-*.js', '**/*.apk'],
       },
       manifest: {
         name: 'Gym',

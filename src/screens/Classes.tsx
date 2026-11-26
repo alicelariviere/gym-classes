@@ -10,11 +10,11 @@ import { Search, Sliders } from '../components/Icons';
 import { IconButton } from '../components/ui';
 
 export function Classes() {
-  const { classes, selectedDay, entryFor, alt } = useStore();
+  const { classes, selectedDay, entryFor, timetable } = useStore();
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  const pool = useMemo(() => classes.filter((c) => c.studio === 'alt'), [classes]);
+  const pool = useMemo(() => classes.filter((c) => c.studio === 'gc'), [classes]);
 
   const visible = pool.filter((c) => {
     if (dayKey(c.start) !== selectedDay) return false;
@@ -39,7 +39,7 @@ export function Classes() {
         </div>
         <DateNav />
         <div className="flex gap-7 border-b border-line">
-          <span className="-mb-px border-b-2 border-ink pb-[11px] text-[15px] font-medium text-ink">{STUDIOS.alt.name}</span>
+          <span className="-mb-px border-b-2 border-ink pb-[11px] text-[15px] font-medium text-ink">{STUDIOS.gc.name}</span>
           <span className="flex-1" />
           <button type="button" onClick={() => setSheetOpen(true)} className="flex items-center gap-1.5 pb-[11px] text-[15px] font-medium">
             <Sliders size={16} />
@@ -52,11 +52,13 @@ export function Classes() {
       <div className="flex flex-col">
         {visible.length === 0 ? (
           <p className="px-5 py-10 text-center text-[14px] text-muted">
-            {alt.status === 'loading' && !alt.updatedAt
-              ? "Loading ALT's timetable…"
-              : alt.status === 'offline' && !alt.updatedAt
-                ? "Couldn't reach TeamUp. Check your connection and try again."
-                : count
+            {timetable.status === 'browser' && !timetable.updatedAt
+              ? 'Glasgow Club classes load in the Gym app for Android.'
+              : timetable.status === 'loading' && !timetable.updatedAt
+                ? 'Loading Glasgow Club classes…'
+                : timetable.status === 'offline' && !timetable.updatedAt
+                  ? "Couldn't reach Glasgow Club. Check your connection and try again."
+                  : count
                   ? 'No classes match your filters on this day.'
                   : 'No classes on this day.'}
           </p>
@@ -65,9 +67,9 @@ export function Classes() {
         )}
       </div>
 
-      {alt.updatedAt && (
+      {timetable.updatedAt && (
         <p className="px-5 pb-6 pt-2 text-center text-[12px] text-faint">
-          {alt.status === 'offline' ? "Offline. Showing ALT's timetable" : 'Live from TeamUp'}, updated {time(new Date(alt.updatedAt))}
+          {timetable.status === 'live' ? 'Live from Glasgow Club' : 'Glasgow Club timetable'}, updated {time(new Date(timetable.updatedAt))}
         </p>
       )}
 
