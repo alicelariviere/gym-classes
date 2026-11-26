@@ -1,8 +1,9 @@
 /*
- * Glasgow Club gym check-in, run by the Android app on Glasgow Club's own
- * booking page (inside the app's Glasgow Club web view, signed in as Alice).
- * It taps through the same steps a person would: pick the next free slot,
- * check the price is £0, book, and confirm. It stops rather than pay.
+ * Glasgow Club booking, run by the Android app on Glasgow Club's own booking
+ * page (inside the app's Glasgow Club web view, signed in as Alice). Used for
+ * gym check-ins (the next free slot from a time) and classes (one exact time).
+ * It taps through the same steps a person would: pick the slot, check the
+ * price is £0, book, and confirm. It stops rather than pay.
  * Served with the web app, so it can be fixed without reinstalling.
  * Reports progress and a step log to the app through GymBridge.
  */
@@ -83,20 +84,31 @@ async function gymBook(p) {
 
     if (SUCCESS.test(pageText()) && state.phase !== 'pick') return finish({ ok: true });
 
-    // 1. Pick the first free slot at or after the time asked for.
+    // 1. Pick the slot: an exact time for a class, or the first free one from a time for the gym.
     if (state.phase === 'pick') {
       var after = new Date(p.after);
       var afterMin = after.getHours() * 60 + after.getMinutes();
+      var exact = !!p.exact;
       var slots = await waitFor(function () {
-        var list = buttons().filter(function (b) { return /^Book now: for Gym Session/i.test(aria(b)); });
+        var list = buttons().filter(function (b) { return /^Book now: for /i.test(aria(b)); });
         return list.length ? list : null;
       }, 20000);
       if (!slots) {
         if (SIGNED_OUT.test(pageText()) || /login|signin|sign-in/i.test(location.href)) return finish({ needsSignIn: true });
         return finish({ ok: false, reason: 'no-slots', message: 'No gym slots to book right now.', snapshot: snapshot() });
       }
-      var pick = slots.find(function (b) { var m = minutesOf(aria(b)); return m !== null && m >= afterMin; });
-      if (!pick) return finish({ ok: false, reason: 'no-slots', message: 'No free gym slots left today.', snapshot: snapshot() });
+      var pick = slots.find(function (b) {
+        var m = minutesOf(aria(b));
+        return m !== null && (exact ? m === afterMin : m >= afterMin);
+      });
+      if (!pick) {
+        return finish({
+          ok: false,
+          reason: exact ? 'full' : 'no-slots',
+          message: exact ? 'That class can’t be booked now: it may be full.' : 'No free gym slots left today.',
+          snapshot: snapshot(),
+        });
+      }
       state.slot = hhmm(minutesOf(aria(pick)));
       state.phase = 'modal';
       note('pick', { slot: state.slot });
@@ -108,7 +120,8 @@ async function gymBook(p) {
       var bookBtn = await waitFor(function () {
         if (SIGNED_OUT.test(pageText())) return 'signed-out';
         return buttons().find(function (b) {
-          return /^Book( for £\s?\d+(\.\d{1,2})?)?$/i.test(text(b)) && !/^Book now: for/i.test(aria(b));
+          if (/^Book now: for/i.test(aria(b))) return false; // the slot buttons, not the form
+          return /^Book .+ for £\s?\d/i.test(aria(b)) || /^Book( now| for £\s?\d+(\.\d{1,2})?)?$/i.test(text(b));
         }) || null;
       }, 12000);
       if (bookBtn === 'signed-out') return finish({ needsSignIn: true });
@@ -120,7 +133,7 @@ async function gymBook(p) {
         }
         return finish({ ok: false, reason: 'stuck', message: "Couldn't find the Book button.", snapshot: snapshot() });
       }
-      var price = pounds(text(bookBtn));
+      var price = pounds(aria(bookBtn) + ' ' + text(bookBtn));
       if (price.length && price[0] > maxPrice) {
         return finish({ ok: false, reason: 'price', message: 'Not booked: Glasgow Club wanted £' + price[0].toFixed(2) + '.', snapshot: snapshot() });
       }
