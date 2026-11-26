@@ -1,6 +1,6 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import type { ReactNode } from 'react';
-import { DESCRIPTION, STUDIOS } from '../data/sample';
+import { STUDIOS } from '../data/sample';
 import type { Category } from '../data/types';
 import { daysBetween, longDay, ordinal, time } from '../lib/dates';
 import { bookingClosed, endOf, isFull, notOpenYet, opensLabel, spacesLabel, spacesLeft, waitlistTotal } from '../lib/classes';
@@ -66,7 +66,7 @@ export function ClassDetail() {
   const past = c.start < now;
   const opening = !entry && notOpenYet(c, now);
   const closed = !entry && bookingClosed(c, now);
-  const description = c.description ?? DESCRIPTION[c.studio];
+  const description = c.description;
   const diff = daysBetween(today, c.start);
   const when = diff === 0 ? 'Today' : diff === 1 ? 'Tomorrow' : longDay(c.start);
   const CatIcon = CATEGORY_ICON[c.category];

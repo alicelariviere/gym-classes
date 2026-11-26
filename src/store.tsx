@@ -1,11 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useState, type ReactNode } from 'react';
-import { buildGcTimetable, initialEntries } from './data/sample';
 import { fetchAlt, mapAlt, readAltCache, writeAltCache, type AltCache } from './data/teamup';
 import type { CheckIn, Entry, GymClass, StudioId } from './data/types';
 import { dayKey, ordinal, startOfDay, time } from './lib/dates';
 import { downloadIcs } from './lib/ics';
+import { glasgowClubGymUrl } from './data/glasgowclub';
 
-const STORAGE_KEY = 'gym-app-v2';
+const STORAGE_KEY = 'gym-app-v3';
 
 interface Persisted {
   seededFor: string;
@@ -56,7 +56,7 @@ function reducer(state: State, action: Action): State {
   }
 }
 
-function load(classes: GymClass[], today: string): Persisted {
+function load(today: string): Persisted {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
@@ -67,7 +67,7 @@ function load(classes: GymClass[], today: string): Persisted {
   } catch {
     // Storage unavailable: fall back to the seed.
   }
-  return { seededFor: today, entries: initialEntries(classes), checkIn: null, calendar: [] };
+  return { seededFor: today, entries: [], checkIn: null, calendar: [] };
 }
 
 export type AltStatus = 'loading' | 'live' | 'offline';
@@ -110,8 +110,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [now, setNow] = useState(() => new Date());
   const today = useMemo(() => startOfDay(now), [now]);
   const todayKey = dayKey(today);
-  const gcClasses = useMemo(() => buildGcTimetable(today), [todayKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // ALT, live from TeamUp. Show the last copy straight away, then refresh.
   const [altData, setAltData] = useState<AltCache | null>(() => readAltCache());
   const [altStatus, setAltStatus] = useState<AltStatus>('loading');
@@ -144,12 +142,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [todayKey]);
 
   const classes = useMemo(
-    () => [...(altData ? mapAlt(altData.list, now) : []), ...gcClasses].sort((a, b) => a.start.getTime() - b.start.getTime()),
-    [altData, gcClasses, now],
+    () => (altData ? mapAlt(altData.list, now) : []).sort((a, b) => a.start.getTime() - b.start.getTime()),
+    [altData, now],
   );
 
   const [state, dispatch] = useReducer(reducer, undefined, () => ({
-    ...load(classes, todayKey),
+    ...load(todayKey),
     selectedDay: todayKey,
     studio: 'alt' as StudioId,
   }));
@@ -228,8 +226,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       notify('You left the waitlist');
     },
     doCheckIn: (slot) => {
-      dispatch({ type: 'checkIn', slot: slot.toISOString() });
-      notify(`Checked in for ${time(slot)}`, 'booked');
+      // Glasgow Club's own page for today's Gorbals gym slots. You book the slot there, at £0.
+      window.open(glasgowClubGymUrl(slot), '_blank', 'noopener');
+      notify(`Opening Glasgow Club for the ${time(slot)} slot`);
     },
     addToCalendar: (id) => {
       const c = index.get(id);
