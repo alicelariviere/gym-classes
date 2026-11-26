@@ -5,6 +5,11 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
   base: './',
+  define: {
+    __BUILD__: JSON.stringify(
+      new Date().toLocaleString('en-GB', { timeZone: 'Europe/London', dateStyle: 'medium', timeStyle: 'short' }),
+    ),
+  },
   plugins: [
     react(),
     tailwindcss(),

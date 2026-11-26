@@ -156,6 +156,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setStudio: (studio) => dispatch({ type: 'studio', studio }),
   };
 
+  // Shared with the feedback layer so each note says what state the app was in.
+  useEffect(() => {
+    (window as unknown as { __gymState?: () => unknown }).__gymState = () => ({
+      studio: state.studio,
+      day: state.selectedDay,
+      booked: entries.filter((e) => e.status === 'booked').length,
+      waitlists: entries.filter((e) => e.status === 'waitlist').length,
+      checkedIn: !!state.checkIn,
+    });
+  }, [state.studio, state.selectedDay, state.checkIn, entries]);
+
   return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;
 }
 

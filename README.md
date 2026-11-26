@@ -36,3 +36,14 @@ Put `dist/` on any static host (Netlify, Vercel, Cloudflare Pages, GitHub Pages 
 1. **ALT Fitness (TeamUp):** sign-in, timetable from `GET /api/v2/events` (provider 3282761), booking through `POST /attendances`, waitlists. This needs a small server, because TeamUp won't accept calls straight from a web page.
 2. **Glasgow Club (Gladstone Go):** cookie sign-in, gym slots (activity S0937, 15-minute slots) and class booking. The extra auth header is still unknown and needs checking.
 3. Swap `sample.ts` for the live data. The screens read from the store, so they shouldn't need to change.
+
+## Feedback from your phone
+
+The pencil button (bottom right) is a feedback layer:
+
+1. Tap the pencil, then tap the thing you want to comment on, or **Whole screen**.
+2. Type a note and tap **Add note**. Notes are saved until you send them.
+3. Tap the pencil again, then **Send**, and pick Claude in the share sheet.
+
+Each note carries the screen, the element, its position and the app state, so fixes land first time.
+Turn it off with `?feedback=off` on the link, and back on with `?feedback=on`.
