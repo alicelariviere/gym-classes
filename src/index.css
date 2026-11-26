@@ -1,0 +1,71 @@
+@import 'tailwindcss';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/700.css';
+@import '@fontsource/barlow-condensed/800.css';
+
+/* Design tokens from the v4 (Nike Training Club style) boards in Paper. */
+@theme {
+  --font-sans: 'Helvetica Neue', 'Inter', system-ui, sans-serif;
+  --font-display: 'Barlow Condensed', 'Helvetica Neue', sans-serif;
+
+  --color-ink: #111111;
+  --color-muted: #757575;
+  --color-faint: #9a9a9a;
+  --color-line: #e5e5e5;
+  --color-soft: #efefef;
+  --color-outline: rgba(17, 17, 17, 0.18);
+
+  /* ALT Fitness = ink, Glasgow Club = teal */
+  --color-teal: #004d57;
+  --color-teal-dot: #7fd3da;
+
+  /* Booked = aqua */
+  --color-aqua-tint: #e5f4f5;
+  --color-aqua: #138a93;
+  --color-aqua-text: #0f6e75;
+
+  /* Waitlist = pink */
+  --color-pink-tint: #fdeef3;
+  --color-pink: #d6457f;
+  --color-pink-ahead: #f2b8ce;
+  --color-pink-rest: #f7d9e4;
+  --color-pink-text: #b0336a;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: #ffffff;
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+
+  button {
+    cursor: pointer;
+  }
+}
+
+.pb-safe {
+  padding-bottom: max(14px, env(safe-area-inset-bottom));
+}
+
+.pt-safe {
+  padding-top: max(12px, env(safe-area-inset-top));
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
