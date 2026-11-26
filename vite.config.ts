@@ -18,6 +18,10 @@ export default defineConfig({
       injectRegister: false,
       includeAssets: ['icon.svg'],
       workbox: {
+        // Take over straight away, so a published update shows on the next open.
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
       },
       manifest: {
