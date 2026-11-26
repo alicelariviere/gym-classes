@@ -16,7 +16,10 @@ export type Category =
   | 'Strength'
   | 'Cycle'
   | 'Pilates'
-  | 'Step';
+  | 'Step'
+  | 'Pole'
+  | 'Open gym'
+  | 'Other';
 
 export type Level = 'Beginners' | 'All levels' | 'Experienced';
 
@@ -36,6 +39,15 @@ export interface GymClass {
   waiting: number;
   /** Shows in "Just released" on Today. */
   justReleased?: boolean;
+  /** No cap on numbers, like ALT's open gym. */
+  unlimited?: boolean;
+  /** When booking opens, if the studio releases classes ahead. */
+  opensAt?: Date;
+  /** When booking closes. */
+  closesAt?: Date;
+  /** The class on the studio's own booking site. */
+  url?: string;
+  description?: string;
 }
 
 export type EntryStatus = 'booked' | 'waitlist';

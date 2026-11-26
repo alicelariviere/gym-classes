@@ -19,6 +19,7 @@ interface Note {
 
 const NOTES_KEY = 'gym-feedback-notes';
 const FLAG_KEY = 'gym-feedback';
+const CLEARED_KEY = 'gym-feedback-cleared-round-1';
 
 export function startFeedback() {
   const param = new URLSearchParams(location.search).get('feedback');
@@ -40,6 +41,12 @@ export function startFeedback() {
   let notes: Note[] = [];
   try {
     notes = JSON.parse(localStorage.getItem(NOTES_KEY) || '[]');
+    // Alice's first round of notes (26 Nov) is done: clear it once.
+    if (localStorage.getItem(CLEARED_KEY) !== '1') {
+      notes = [];
+      localStorage.setItem(NOTES_KEY, '[]');
+      localStorage.setItem(CLEARED_KEY, '1');
+    }
   } catch {
     notes = [];
   }

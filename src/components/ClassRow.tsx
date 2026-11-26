@@ -3,7 +3,8 @@ import type { MouseEvent } from 'react';
 import { STUDIOS } from '../data/sample';
 import type { Entry, GymClass } from '../data/types';
 import { time } from '../lib/dates';
-import { isFull, positionLabel, spacesLabel, spacesLeft, waitlistTotal } from '../lib/classes';
+import { bookingClosed, isFull, notOpenYet, positionLabel, spacesLabel, spacesLeft, waitlistTotal } from '../lib/classes';
+import { shortDay } from '../lib/dates';
 import { useStore } from '../store';
 import { Pill, QueueBars, StudioDot, Tag } from './ui';
 
@@ -16,6 +17,9 @@ export function ClassRow({ cls, entry, mode = 'classes' }: { cls: GymClass; entr
   const full = isFull(cls, entry);
   const spaces = spacesLeft(cls, entry);
   const past = cls.start < now;
+  const opening = !entry && notOpenYet(cls, now);
+  const closed = !entry && bookingClosed(cls, now);
+  const canAct = !past && !opening && !closed;
 
   const tint = waitlisted ? 'bg-pink-tint' : booked && mode === 'classes' ? 'bg-aqua-tint' : '';
 
@@ -24,9 +28,10 @@ export function ClassRow({ cls, entry, mode = 'classes' }: { cls: GymClass; entr
     fn(cls.id);
   };
 
-  let meta = cls.instructor;
-  if (waitlisted) meta = `${cls.instructor} · full, ${waitlistTotal(cls, entry)} waiting`;
-  else if (mode === 'classes' && !booked && !full && spaces > 3) meta = `${cls.instructor} · ${spacesLabel(spaces)}`;
+  const who = cls.instructor || 'Open session';
+  let meta = who;
+  if (waitlisted) meta = `${who} · full, ${waitlistTotal(cls, entry)} waiting`;
+  else if (mode === 'classes' && !booked && !full && !cls.unlimited && spaces > 3) meta = `${who} · ${spacesLabel(spaces)}`;
 
   return (
     <div
@@ -46,7 +51,7 @@ export function ClassRow({ cls, entry, mode = 'classes' }: { cls: GymClass; entr
         {mode === 'bookings' && !waitlisted ? (
           <span className="flex items-center gap-[5px] text-[13px]" style={{ color: cls.studio === 'gc' ? studio.dot : 'var(--color-muted)' }}>
             <StudioDot color={studio.dot} />
-            {cls.studio === 'alt' ? 'ALT' : studio.name} · {cls.instructor}
+            {cls.studio === 'alt' ? 'ALT' : studio.name} · {who}
           </span>
         ) : (
           <span className="text-[13px] text-muted">{meta}</span>
@@ -59,11 +64,13 @@ export function ClassRow({ cls, entry, mode = 'classes' }: { cls: GymClass; entr
             <span className="text-[13px] font-medium text-pink-text">{positionLabel(entry)}</span>
           </span>
         )}
-        {mode === 'classes' && !entry && full && <Tag>Full · {cls.waiting} waiting</Tag>}
-        {mode === 'classes' && !entry && !full && spaces <= 3 && <Tag>{spacesLabel(spaces)}</Tag>}
+        {mode === 'classes' && opening && cls.opensAt && <Tag>Opens {shortDay(cls.opensAt)}</Tag>}
+        {mode === 'classes' && closed && <Tag>Booking closed</Tag>}
+        {mode === 'classes' && canAct && !entry && full && <Tag>Full · {cls.waiting} waiting</Tag>}
+        {mode === 'classes' && canAct && !entry && !full && spaces <= 3 && <Tag>{spacesLabel(spaces)}</Tag>}
       </div>
 
-      {!past &&
+      {canAct &&
         (booked ? (
           <Pill variant="outline" onClick={act(cancel)}>
             Cancel

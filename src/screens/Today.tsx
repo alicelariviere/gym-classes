@@ -2,13 +2,29 @@ import { Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { STUDIOS } from '../data/sample';
 import type { Entry, GymClass } from '../data/types';
-import { addMinutes, isSameDay, nextGymSlot, ordinal, relativeDay, shortDay, time } from '../lib/dates';
+import { addMinutes, daysBetween, isSameDay, nextGymSlot, ordinal, shortDay, time } from '../lib/dates';
 import { endOf, spacesLabel, spacesLeft } from '../lib/classes';
 import { useStore } from '../store';
-import { Check, ChevronRight } from '../components/Icons';
+import { CalendarPlus, Check, ChevronRight, Close } from '../components/Icons';
 import { Pill, QueueBars, Tag } from '../components/ui';
 
 type Item = { e: Entry; c: GymClass };
+
+/** "Starts in 25 min", "Starts in 3h 40m", "Starts tomorrow". */
+function startsIn(c: GymClass, now: Date, today: Date): string {
+  if (c.start <= now && endOf(c) > now) return 'On now';
+  const mins = Math.round((c.start.getTime() - now.getTime()) / 60000);
+  if (mins < 60) return `Starts in ${Math.max(1, mins)} min`;
+  if (isSameDay(c.start, today)) {
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return `Starts in ${h}h${m ? ` ${m}m` : ''}`;
+  }
+  const days = daysBetween(today, c.start);
+  if (days === 1) return 'Starts tomorrow';
+  if (days < 7) return `Starts ${c.start.toLocaleDateString('en-GB', { weekday: 'long' })}`;
+  return `Starts ${shortDay(c.start)}`;
+}
 
 /** Splits "Aerial Hoop: Beginners" into two lines for the condensed headline. */
 export function Headline({ title, className = '' }: { title: string; className?: string }) {
@@ -31,11 +47,11 @@ export function Headline({ title, className = '' }: { title: string; className?:
 
 function NextUp({ items }: { items: Item[] }) {
   const navigate = useNavigate();
-  const { today, inCalendar, addToCalendar, cancel, leaveWaitlist } = useStore();
+  const { now, today, inCalendar, addToCalendar, cancel, leaveWaitlist } = useStore();
 
   if (items.length === 0) {
     return (
-      <section className="flex flex-col gap-4 bg-ink px-5 py-7 text-white">
+      <section className="flex flex-col gap-4 bg-ink px-5 pb-7 pt-2 text-white">
         <span className="text-[13px] font-medium">Nothing booked</span>
         <h2 className="font-display text-[46px] font-extrabold uppercase leading-[42px]">
           Find your
@@ -54,18 +70,18 @@ function NextUp({ items }: { items: Item[] }) {
   const [hero, ...rest] = items;
   const later = rest.filter((x) => isSameDay(x.c.start, hero.c.start));
   const studio = STUDIOS[hero.c.studio];
-  const dayLabel = isSameDay(hero.c.start, today) ? '' : `${relativeDay(hero.c.start, today)} · `;
   const waitlisted = hero.e.status === 'waitlist';
 
   return (
-    <section className="flex flex-col bg-ink px-5 py-7 text-white">
+    <section className="flex flex-col bg-ink px-5 pb-7 pt-2 text-white">
       <button type="button" className="flex flex-col gap-3.5 text-left" onClick={() => navigate(`/class/${hero.c.id}`)}>
         <span className="text-[13px] font-medium">
-          {studio.name} · {dayLabel}
-          {time(hero.c.start)} to {time(endOf(hero.c))}
+          {studio.name} · {startsIn(hero.c, now, today)}
         </span>
         <Headline title={hero.c.title} />
-        <span className="text-[14px] text-white/80">With {hero.c.instructor}</span>
+        <span className="text-[14px] text-white/80">
+          {hero.c.instructor ? `With ${hero.c.instructor}` : 'Open session'} · {time(hero.c.start)} to {time(endOf(hero.c))}
+        </span>
       </button>
 
       {waitlisted && hero.e.position && (
@@ -77,23 +93,25 @@ function NextUp({ items }: { items: Item[] }) {
         </div>
       )}
 
-      <div className="flex items-center gap-4 pt-[18px]">
+      <div className="flex items-center gap-6 pt-5">
         {waitlisted ? null : inCalendar(hero.c.id) ? (
-          <Pill variant="white" size="lg" className="h-11 px-[18px]">
-            <Check size={16} className="text-ink" strokeWidth={2.4} />
+          <span className="flex items-center gap-2 text-[15px] font-medium text-white/70">
+            <Check size={17} strokeWidth={2.4} />
             In your calendar
-          </Pill>
+          </span>
         ) : (
-          <Pill variant="white" size="lg" className="h-11 px-[18px]" onClick={() => addToCalendar(hero.c.id)}>
-            Add to calendar
-          </Pill>
+          <button type="button" className="flex items-center gap-2 text-[15px] font-medium" onClick={() => addToCalendar(hero.c.id)}>
+            <CalendarPlus size={18} />
+            <span className="underline underline-offset-2">Add to calendar</span>
+          </button>
         )}
         <button
           type="button"
-          className="text-[15px] font-medium underline underline-offset-2"
+          className="flex items-center gap-2 text-[15px] font-medium"
           onClick={() => (waitlisted ? leaveWaitlist(hero.c.id) : cancel(hero.c.id))}
         >
-          {waitlisted ? 'Leave waitlist' : 'Cancel'}
+          <Close size={15} />
+          <span className="underline underline-offset-2">{waitlisted ? 'Leave waitlist' : 'Cancel'}</span>
         </button>
       </div>
 
@@ -139,7 +157,10 @@ function GymCheckIn() {
     <section className="flex items-center justify-between gap-3 bg-teal px-5 py-5 text-white">
       <div className="flex flex-col gap-[3px]">
         <span className="flex items-center gap-1.5 text-[12px] font-medium text-white/80">
-          <span className="h-1.5 w-1.5 rounded-full bg-teal-dot" />
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="absolute inline-flex h-full w-full rounded-full bg-teal-dot opacity-75 motion-safe:animate-ping" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-teal-dot" />
+          </span>
           Glasgow Club Gym · Gorbals
         </span>
         <span className="text-[20px] font-medium">{active ? `You're in for ${time(active)}` : `Next slot ${time(slot)}`}</span>
@@ -160,24 +181,16 @@ function GymCheckIn() {
 
 function JustReleased() {
   const navigate = useNavigate();
-  const { classes, entryFor, book, bookMany } = useStore();
-  const released = classes.filter((c) => c.justReleased);
-  const unbooked = released.filter((c) => !entryFor(c.id));
+  const { classes, entryFor, book } = useStore();
+  // Aerial classes ALT opened for booking in the last day.
+  const released = classes
+    .filter((c) => c.justReleased && (c.category === 'Hoop' || c.category === 'Silks' || c.category === 'Trapeze'))
+    .slice(0, 4);
   if (released.length === 0) return null;
 
   return (
     <section className="flex flex-col px-5 pb-2 pt-6">
-      <div className="flex flex-col gap-1 pb-4">
-        <div className="flex items-baseline justify-between">
-          <h2 className="text-[17px] font-medium">Just released</h2>
-          {unbooked.length > 1 && (
-            <button type="button" className="text-[14px] font-medium" onClick={() => bookMany(unbooked.map((c) => c.id))}>
-              Book all {unbooked.length}
-            </button>
-          )}
-        </div>
-        <p className="text-[14px] text-muted">Your usual ALT classes, open to book now.</p>
-      </div>
+      <h2 className="pb-4 text-[17px] font-medium">Just released</h2>
       {released.map((c) => {
         const entry = entryFor(c.id);
         return (
@@ -188,7 +201,7 @@ function JustReleased() {
               </span>
               <span className="text-[15px] font-medium">{c.title}</span>
               <span className="text-[13px] text-muted">
-                {c.instructor} · {spacesLabel(spacesLeft(c, entry))}
+                {c.instructor || 'Open session'} · {spacesLabel(spacesLeft(c, entry))}
               </span>
             </button>
             {entry ? <Tag kind="booked">Booked</Tag> : <Pill onClick={() => book(c.id)}>Book</Pill>}
@@ -211,7 +224,7 @@ export function Today() {
 
   return (
     <div className="flex flex-col">
-      <header className="pt-safe px-5 pb-5">
+      <header className="pt-safe bg-ink px-5 pb-5 text-white">
         <h1 className="pt-2 text-[26px] font-medium leading-[30px] tracking-[-0.01em]">Today</h1>
       </header>
       <NextUp items={ordered} />

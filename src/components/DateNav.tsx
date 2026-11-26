@@ -23,10 +23,10 @@ export function DateNav() {
         <span className="text-[18px] font-medium">{label}</span>
         <IconButton
           label="Open calendar"
-          className="h-10 w-10 border border-outline"
+          className="h-9 w-9 border border-outline"
           onClick={() => navigate(`/calendar?back=${encodeURIComponent(location.pathname)}`)}
         >
-          <Calendar size={19} />
+          <Calendar size={17} />
         </IconButton>
       </div>
       <IconButton label="Next day" className="-mr-1 h-10 w-10 justify-end" onClick={() => step(1)}>

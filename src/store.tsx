@@ -1,10 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useState, type ReactNode } from 'react';
-import { buildTimetable, initialEntries } from './data/sample';
+import { buildGcTimetable, initialEntries } from './data/sample';
+import { fetchAlt, mapAlt, readAltCache, writeAltCache, type AltCache } from './data/teamup';
 import type { CheckIn, Entry, GymClass, StudioId } from './data/types';
-import { dayKey, startOfDay } from './lib/dates';
+import { dayKey, ordinal, startOfDay, time } from './lib/dates';
 import { downloadIcs } from './lib/ics';
 
-const STORAGE_KEY = 'gym-app-v1';
+const STORAGE_KEY = 'gym-app-v2';
 
 interface Persisted {
   seededFor: string;
@@ -69,8 +70,20 @@ function load(classes: GymClass[], today: string): Persisted {
   return { seededFor: today, entries: initialEntries(classes), checkIn: null, calendar: [] };
 }
 
+export type AltStatus = 'loading' | 'live' | 'offline';
+
+/** The short banner that confirms an action. */
+export interface Toast {
+  id: number;
+  text: string;
+  kind: 'booked' | 'waitlist' | 'info';
+}
+
 interface Store {
   now: Date;
+  /** Whether ALT's timetable is live from TeamUp, and when it was fetched. */
+  alt: { status: AltStatus; updatedAt: number | null };
+  toast: Toast | null;
   today: Date;
   classes: GymClass[];
   byId: (id: string) => GymClass | undefined;
@@ -97,7 +110,43 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [now, setNow] = useState(() => new Date());
   const today = useMemo(() => startOfDay(now), [now]);
   const todayKey = dayKey(today);
-  const classes = useMemo(() => buildTimetable(today), [todayKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const gcClasses = useMemo(() => buildGcTimetable(today), [todayKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ALT, live from TeamUp. Show the last copy straight away, then refresh.
+  const [altData, setAltData] = useState<AltCache | null>(() => readAltCache());
+  const [altStatus, setAltStatus] = useState<AltStatus>('loading');
+  useEffect(() => {
+    let ctrl: AbortController | null = null;
+    let last = 0;
+    const refresh = async () => {
+      if (Date.now() - last < 60_000) return;
+      last = Date.now();
+      ctrl?.abort();
+      ctrl = new AbortController();
+      try {
+        const list = await fetchAlt(startOfDay(new Date()), ctrl.signal);
+        writeAltCache(list);
+        setAltData({ fetchedAt: Date.now(), list });
+        setAltStatus('live');
+      } catch (e) {
+        if ((e as Error).name !== 'AbortError') setAltStatus('offline');
+      }
+    };
+    refresh();
+    const onShow = () => document.visibilityState === 'visible' && refresh();
+    document.addEventListener('visibilitychange', onShow);
+    const t = window.setInterval(refresh, 5 * 60_000);
+    return () => {
+      ctrl?.abort();
+      document.removeEventListener('visibilitychange', onShow);
+      window.clearInterval(t);
+    };
+  }, [todayKey]);
+
+  const classes = useMemo(
+    () => [...(altData ? mapAlt(altData.list, now) : []), ...gcClasses].sort((a, b) => a.start.getTime() - b.start.getTime()),
+    [altData, gcClasses, now],
+  );
 
   const [state, dispatch] = useReducer(reducer, undefined, () => ({
     ...load(classes, todayKey),
@@ -127,8 +176,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const byId = useCallback((id: string) => index.get(id), [index]);
   const entryFor = useCallback((id: string) => entryMap.get(id), [entryMap]);
 
+  const [toast, setToast] = useState<Toast | null>(null);
+  const notify = (text: string, kind: Toast['kind'] = 'info') => setToast({ id: Date.now(), text, kind });
+
+  // ALT bookings happen on TeamUp until sign-in is connected.
+  const openOnStudioSite = (id: string) => {
+    const c = index.get(id);
+    if (c?.studio === 'alt' && c.url) {
+      window.open(c.url, '_blank', 'noopener');
+      notify('Opening TeamUp to book');
+      return true;
+    }
+    return false;
+  };
+
   const store: Store = {
     now,
+    alt: { status: altStatus, updatedAt: altData?.fetchedAt ?? null },
+    toast,
     today,
     classes,
     byId,
@@ -138,15 +203,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     inCalendar: (id) => state.calendar.includes(id),
     selectedDay: state.selectedDay,
     studio: state.studio,
-    book: (id) => dispatch({ type: 'book', id }),
-    bookMany: (ids) => dispatch({ type: 'bookMany', ids }),
-    cancel: (id) => dispatch({ type: 'cancel', id }),
-    joinWaitlist: (id) => {
-      const c = index.get(id);
-      dispatch({ type: 'joinWaitlist', id, position: (c?.waiting ?? 0) + 1 });
+    book: (id) => {
+      if (openOnStudioSite(id)) return;
+      dispatch({ type: 'book', id });
+      notify(`Booked · ${index.get(id)?.title ?? 'class'}`, 'booked');
     },
-    leaveWaitlist: (id) => dispatch({ type: 'cancel', id }),
-    doCheckIn: (slot) => dispatch({ type: 'checkIn', slot: slot.toISOString() }),
+    bookMany: (ids) => {
+      const inApp = ids.filter((id) => index.get(id)?.studio !== 'alt');
+      dispatch({ type: 'bookMany', ids: inApp });
+      notify(`Booked ${inApp.length} classes`, 'booked');
+    },
+    cancel: (id) => {
+      dispatch({ type: 'cancel', id });
+      notify('Booking cancelled');
+    },
+    joinWaitlist: (id) => {
+      if (openOnStudioSite(id)) return;
+      const position = (index.get(id)?.waiting ?? 0) + 1;
+      dispatch({ type: 'joinWaitlist', id, position });
+      notify(`On the waitlist · ${ordinal(position)} in line`, 'waitlist');
+    },
+    leaveWaitlist: (id) => {
+      dispatch({ type: 'cancel', id });
+      notify('You left the waitlist');
+    },
+    doCheckIn: (slot) => {
+      dispatch({ type: 'checkIn', slot: slot.toISOString() });
+      notify(`Checked in for ${time(slot)}`, 'booked');
+    },
     addToCalendar: (id) => {
       const c = index.get(id);
       if (c) downloadIcs(c);

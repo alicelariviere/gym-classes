@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { STUDIOS } from '../data/sample';
 import type { StudioId } from '../data/types';
-import { dayKey } from '../lib/dates';
+import { dayKey, time } from '../lib/dates';
 import { spacesLeft } from '../lib/classes';
 import { useStore } from '../store';
 import { ClassRow } from '../components/ClassRow';
@@ -11,7 +11,7 @@ import { Search, Sliders } from '../components/Icons';
 import { IconButton } from '../components/ui';
 
 export function Classes() {
-  const { classes, selectedDay, studio, setStudio, entryFor } = useStore();
+  const { classes, selectedDay, studio, setStudio, entryFor, alt } = useStore();
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -66,12 +66,24 @@ export function Classes() {
       <div className="flex flex-col">
         {visible.length === 0 ? (
           <p className="px-5 py-10 text-center text-[14px] text-muted">
-            {count ? 'No classes match your filters on this day.' : 'No classes on this day.'}
+            {studio === 'alt' && alt.status === 'loading' && !alt.updatedAt
+              ? "Loading ALT's timetable…"
+              : studio === 'alt' && alt.status === 'offline' && !alt.updatedAt
+                ? "Couldn't reach TeamUp. Check your connection and try again."
+                : count
+                  ? 'No classes match your filters on this day.'
+                  : 'No classes on this day.'}
           </p>
         ) : (
           visible.map((c) => <ClassRow key={c.id} cls={c} entry={entryFor(c.id)} />)
         )}
       </div>
+
+      {studio === 'alt' && alt.updatedAt && (
+        <p className="px-5 pb-6 pt-2 text-center text-[12px] text-faint">
+          {alt.status === 'offline' ? "Offline. Showing ALT's timetable" : 'Live from TeamUp'}, updated {time(new Date(alt.updatedAt))}
+        </p>
+      )}
 
       <FilterSheet
         open={sheetOpen}

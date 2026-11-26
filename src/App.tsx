@@ -2,6 +2,7 @@ import { HashRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import { StoreProvider } from './store';
 import { TabBar } from './components/TabBar';
+import { ToastBanner } from './components/ToastBanner';
 import { Today } from './screens/Today';
 import { Classes } from './screens/Classes';
 import { ClassDetail } from './screens/ClassDetail';
@@ -14,6 +15,9 @@ function Shell() {
 
   useEffect(() => {
     window.scrollTo(0, 0);
+    // Black screens tint the phone's status bar black too, so the header runs to the top.
+    const dark = pathname === '/' || pathname.startsWith('/class/');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#111111' : '#FFFFFF');
   }, [pathname]);
 
   return (
@@ -27,6 +31,7 @@ function Shell() {
         <Route path="*" element={<Today />} />
       </Routes>
       {withTabs && <TabBar />}
+      <ToastBanner />
     </div>
   );
 }

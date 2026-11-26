@@ -21,7 +21,7 @@ export function Pill({
   return (
     <button
       type="button"
-      className={`inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full font-medium transition-opacity active:opacity-70 disabled:opacity-40 ${sizing} ${variants[variant]} ${className}`}
+      className={`inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full [&_svg]:shrink-0 font-medium transition-opacity active:opacity-70 disabled:opacity-40 ${sizing} ${variants[variant]} ${className}`}
       {...rest}
     >
       {children}

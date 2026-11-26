@@ -3,18 +3,18 @@ import type { ReactNode } from 'react';
 import { DESCRIPTION, STUDIOS } from '../data/sample';
 import type { Category } from '../data/types';
 import { daysBetween, longDay, ordinal, time } from '../lib/dates';
-import { endOf, isFull, spacesLabel, spacesLeft, waitlistTotal } from '../lib/classes';
+import { bookingClosed, endOf, isFull, notOpenYet, opensLabel, spacesLabel, spacesLeft, waitlistTotal } from '../lib/classes';
 import { useStore } from '../store';
 import {
   BikeIcon,
   CalendarPlus,
+  Check,
   ChevronLeft,
   Clock,
   Close,
   HoopIcon,
   People,
   Pin,
-  Share,
   SilksIcon,
   StretchIcon,
   WeightIcon,
@@ -29,6 +29,8 @@ const CATEGORY_ICON: Partial<Record<Category, (p: { size?: number }) => ReactNod
   Flexibility: StretchIcon,
   Strength: WeightIcon,
   Cycle: BikeIcon,
+  Pilates: StretchIcon,
+  'Open gym': WeightIcon,
 };
 
 function Row({ icon, children }: { icon: ReactNode; children: ReactNode }) {
@@ -62,14 +64,12 @@ export function ClassDetail() {
   const full = isFull(c, entry);
   const spaces = spacesLeft(c, entry);
   const past = c.start < now;
+  const opening = !entry && notOpenYet(c, now);
+  const closed = !entry && bookingClosed(c, now);
+  const description = c.description ?? DESCRIPTION[c.studio];
   const diff = daysBetween(today, c.start);
   const when = diff === 0 ? 'Today' : diff === 1 ? 'Tomorrow' : longDay(c.start);
   const CatIcon = CATEGORY_ICON[c.category];
-
-  const share = () => {
-    const text = `${c.title} · ${studio.name} · ${when} ${time(c.start)}`;
-    if (navigator.share) navigator.share({ title: c.title, text }).catch(() => {});
-  };
 
   return (
     <div className="flex min-h-full flex-col">
@@ -78,14 +78,11 @@ export function ClassDetail() {
           <IconButton label="Back" className="h-9 w-9 bg-white/90 text-ink" onClick={() => navigate(-1)}>
             <ChevronLeft size={18} />
           </IconButton>
-          <IconButton label="Share" className="h-9 w-9 bg-white/90 text-ink" onClick={share}>
-            <Share size={18} />
-          </IconButton>
         </div>
         <div className="flex flex-col items-start gap-2.5 px-5 pt-7">
           <span className="text-[13px] font-medium">{studio.name}</span>
           <Headline title={c.title} />
-          <span className="text-[14px] text-white/75">With {c.instructor}</span>
+          <span className="text-[14px] text-white/75">{c.instructor ? `With ${c.instructor}` : 'Open session, no instructor'}</span>
           {booked && (
             <span className="mt-1 inline-flex items-center gap-[5px] rounded-full bg-aqua-tint py-1.5 pl-2.5 pr-3 text-[13px] font-medium text-aqua-text">
               <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden>
@@ -112,7 +109,7 @@ export function ClassDetail() {
             {c.category} · {c.level}
           </Row>
           <Row icon={<Pin size={20} />}>{studio.venue}</Row>
-          {!booked && (
+          {!booked && !c.unlimited && !opening && (
             <Row icon={<People size={20} />}>
               <span className="rounded-full bg-soft px-[11px] py-1 text-[14px] font-medium">
                 {full ? `Full · ${waitlistTotal(c, entry)} waiting` : spacesLabel(spaces)}
@@ -121,24 +118,29 @@ export function ClassDetail() {
           )}
         </div>
 
-        <p className="text-[14px] leading-[21px] text-muted">{DESCRIPTION[c.studio]}</p>
+        {description && <p className="whitespace-pre-line text-[14px] leading-[21px] text-muted">{description}</p>}
 
-        {!past && (
+        {!past && (opening || closed) && (
+          <div className="flex items-center gap-2.5 pt-1">
+            <Pill variant="outline" size="lg" className="flex-1" disabled>
+              {opening ? opensLabel(c) : 'Booking closed'}
+            </Pill>
+          </div>
+        )}
+
+        {!past && !opening && !closed && (
           <div className="flex items-center gap-2.5 pt-1">
             {booked ? (
-              <>
-                <Pill variant="outline" size="lg" className="flex-1" onClick={() => cancel(c.id)}>
-                  <Close size={16} />
+              <div className="grid flex-1 grid-cols-2 gap-2.5">
+                <Pill size="lg" className="px-3 text-[15px]" onClick={() => addToCalendar(c.id)}>
+                  {inCalendar(c.id) ? <Check size={17} strokeWidth={2.4} /> : <CalendarPlus size={18} />}
+                  {inCalendar(c.id) ? 'In calendar' : 'Add to calendar'}
+                </Pill>
+                <Pill variant="outline" size="lg" className="px-3 text-[15px]" onClick={() => cancel(c.id)}>
+                  <Close size={15} />
                   Cancel booking
                 </Pill>
-                <IconButton
-                  label={inCalendar(c.id) ? 'In your calendar' : 'Add to calendar'}
-                  className="h-[50px] w-[50px] bg-ink text-white"
-                  onClick={() => addToCalendar(c.id)}
-                >
-                  <CalendarPlus size={22} />
-                </IconButton>
-              </>
+              </div>
             ) : waitlisted ? (
               <Pill variant="outline" size="lg" className="flex-1" onClick={() => leaveWaitlist(c.id)}>
                 Leave waitlist
@@ -153,6 +155,9 @@ export function ClassDetail() {
               </Pill>
             )}
           </div>
+        )}
+        {!past && !opening && !closed && !entry && c.studio === 'alt' && (
+          <p className="-mt-2 text-center text-[13px] text-muted">Opens TeamUp to finish booking</p>
         )}
       </section>
     </div>
