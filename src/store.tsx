@@ -4,6 +4,7 @@ import type { CheckIn, Entry, GymClass, StudioId } from './data/types';
 import { dayKey, ordinal, startOfDay, time } from './lib/dates';
 import { downloadIcs } from './lib/ics';
 import { glasgowClubGymUrl } from './data/glasgowclub';
+import { bookGymSlot, inApp, type CheckInResult } from './lib/native';
 
 const STORAGE_KEY = 'gym-app-v3';
 
@@ -84,6 +85,8 @@ interface Store {
   /** Whether ALT's timetable is live from TeamUp, and when it was fetched. */
   alt: { status: AltStatus; updatedAt: number | null };
   toast: Toast | null;
+  /** The Glasgow Club check-in in progress, or how the last one went. */
+  gymCheck: { busy: boolean; last: CheckInResult | null };
   today: Date;
   classes: GymClass[];
   byId: (id: string) => GymClass | undefined;
@@ -175,6 +178,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const entryFor = useCallback((id: string) => entryMap.get(id), [entryMap]);
 
   const [toast, setToast] = useState<Toast | null>(null);
+  const [gymCheck, setGymCheck] = useState<{ busy: boolean; last: CheckInResult | null }>({ busy: false, last: null });
   const notify = (text: string, kind: Toast['kind'] = 'info') => setToast({ id: Date.now(), text, kind });
 
   // ALT bookings happen on TeamUp until sign-in is connected.
@@ -192,6 +196,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     now,
     alt: { status: altStatus, updatedAt: altData?.fetchedAt ?? null },
     toast,
+    gymCheck,
     today,
     classes,
     byId,
@@ -225,10 +230,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'cancel', id });
       notify('You left the waitlist');
     },
-    doCheckIn: (slot) => {
-      // Glasgow Club's own page for today's Gorbals gym slots. You book the slot there, at £0.
-      window.open(glasgowClubGymUrl(slot), '_blank', 'noopener');
-      notify(`Opening Glasgow Club for the ${time(slot)} slot`);
+    doCheckIn: async (slot) => {
+      if (!inApp()) {
+        // In a browser, Glasgow Club's own page is as close as we can get.
+        window.open(glasgowClubGymUrl(slot), '_blank', 'noopener');
+        notify(`Opening Glasgow Club for the ${time(slot)} slot`);
+        return;
+      }
+      if (gymCheck.busy) return;
+      setGymCheck({ busy: true, last: null });
+      let result: CheckInResult;
+      try {
+        result = await bookGymSlot(slot);
+      } catch (e) {
+        result = { ok: false, reason: 'error', message: String((e as Error)?.message ?? e) };
+      }
+      setGymCheck({ busy: false, last: result });
+      try {
+        localStorage.setItem('gym-last-checkin', JSON.stringify({ at: new Date().toISOString(), ...result }));
+      } catch {
+        // Only used for sending details.
+      }
+      if (result.ok && result.slot) {
+        const [h, m] = result.slot.split(':').map(Number);
+        const booked = new Date(slot);
+        booked.setHours(h, m, 0, 0);
+        dispatch({ type: 'checkIn', slot: booked.toISOString() });
+        notify(`Checked in for ${result.slot}`, 'booked');
+      } else {
+        notify(result.message ?? "Couldn't book the slot");
+      }
     },
     addToCalendar: (id) => {
       const c = index.get(id);

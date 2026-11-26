@@ -47,3 +47,26 @@ The pencil button (bottom right) is a feedback layer:
 
 Each note carries the screen, the element, its position and the app state, so fixes land first time.
 Turn it off with `?feedback=off` on the link, and back on with `?feedback=on`.
+
+## Android app (one-tap Glasgow Club check-in)
+
+The Android app wraps the live site (it loads https://alicelariviere.github.io/gym-classes/),
+so most changes only need a web publish. Its one native addition is a Glasgow Club bridge:
+
+- `android/app/src/main/java/.../GlasgowClubPlugin.java` keeps Glasgow Club's own website in a
+  second web view, signed in as you. You sign in there once; the app never sees the password.
+- `public/gc-book.js` runs on Glasgow Club's gym page and taps through a booking: next free slot,
+  check the price is £0, book, confirm. It stops instead of paying anything. It's fetched fresh
+  each time, so fixes don't need a reinstall.
+
+Build the APK (needs the Android SDK, and the signing key that lives only on your Mac):
+
+```bash
+npm run build && npx cap sync android
+cd android && ./gradlew assembleRelease
+# app/build/outputs/apk/release/app-release.apk
+```
+
+`android/gym-release.keystore` and `android/keystore.properties` are the signing key and its
+passwords. They're not in git. Keep them: updates only install over the top if they're signed
+with the same key.

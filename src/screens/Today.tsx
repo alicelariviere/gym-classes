@@ -5,6 +5,7 @@ import type { Entry, GymClass } from '../data/types';
 import { addMinutes, daysBetween, isSameDay, nextGymSlot, ordinal, shortDay, time } from '../lib/dates';
 import { endOf, spacesLabel, spacesLeft } from '../lib/classes';
 import { useStore } from '../store';
+import { inApp, showGlasgowClub } from '../lib/native';
 import { CalendarPlus, Check, ChevronRight, Close } from '../components/Icons';
 import { Pill, QueueBars, Tag } from '../components/ui';
 
@@ -149,31 +150,62 @@ function NextUp({ items }: { items: Item[] }) {
 }
 
 function GymCheckIn() {
-  const { now, checkIn, doCheckIn } = useStore();
+  const { now, checkIn, doCheckIn, gymCheck } = useStore();
   const slot = nextGymSlot(now);
   const active = checkIn && addMinutes(new Date(checkIn.slot), 30) > now ? new Date(checkIn.slot) : null;
+  const failed = !gymCheck.busy && gymCheck.last && !gymCheck.last.ok ? gymCheck.last : null;
+
+  const sendDetails = () => {
+    const text = `Glasgow Club check-in details\n\n${localStorage.getItem('gym-last-checkin') ?? ''}`;
+    if (navigator.share) navigator.share({ title: 'Check-in details', text }).catch(() => {});
+    else navigator.clipboard?.writeText(text);
+  };
 
   return (
-    <section className="flex items-center justify-between gap-3 bg-teal px-5 py-5 text-white">
-      <div className="flex flex-col gap-[3px]">
-        <span className="flex items-center gap-1.5 text-[12px] font-medium text-white/80">
-          <span className="relative flex h-1.5 w-1.5">
-            <span className="absolute inline-flex h-full w-full rounded-full bg-teal-dot opacity-75 motion-safe:animate-ping" />
-            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-teal-dot" />
+    <section className="flex flex-col gap-3 bg-teal px-5 py-5 text-white">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col gap-[3px]">
+          <span className="flex items-center gap-1.5 text-[12px] font-medium text-white/80">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-teal-dot opacity-75 motion-safe:animate-ping" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-teal-dot" />
+            </span>
+            Glasgow Club Gym · Gorbals
           </span>
-          Glasgow Club Gym · Gorbals
-        </span>
-        <span className="text-[20px] font-medium">{active ? `You're in for ${time(active)}` : `Next slot ${time(slot)}`}</span>
+          <span className="text-[20px] font-medium">
+            {active ? `You're in for ${time(active)}` : gymCheck.busy ? `Booking ${time(slot)}…` : `Next slot ${time(slot)}`}
+          </span>
+        </div>
+        {active ? (
+          <Pill variant="teal" size="lg" className="h-[46px] px-5" disabled>
+            <Check size={16} strokeWidth={2.4} />
+            Checked in
+          </Pill>
+        ) : gymCheck.busy ? (
+          <Pill variant="teal" size="lg" className="h-[46px] px-5" disabled>
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-teal border-t-transparent" />
+            Booking
+          </Pill>
+        ) : (
+          <Pill variant="teal" size="lg" className="h-[46px] px-[22px]" onClick={() => doCheckIn(slot)}>
+            Check in
+          </Pill>
+        )}
       </div>
-      {active ? (
-        <Pill variant="teal" size="lg" className="h-[46px] px-5" disabled>
-          <Check size={16} strokeWidth={2.4} />
-          Checked in
-        </Pill>
-      ) : (
-        <Pill variant="teal" size="lg" className="h-[46px] px-[22px]" onClick={() => doCheckIn(slot)}>
-          Check in
-        </Pill>
+      {failed && (
+        <div className="flex flex-col gap-1.5 border-t border-white/15 pt-3 text-[13px]">
+          <span className="text-white/85">{failed.message ?? "Couldn't book the slot."}</span>
+          <span className="flex gap-4 font-medium">
+            {inApp() && (
+              <button type="button" className="underline underline-offset-2" onClick={() => showGlasgowClub()}>
+                See what happened
+              </button>
+            )}
+            <button type="button" className="underline underline-offset-2" onClick={sendDetails}>
+              Send details
+            </button>
+          </span>
+        </div>
       )}
     </section>
   );
